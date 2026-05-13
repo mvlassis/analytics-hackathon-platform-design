@@ -3,7 +3,8 @@ import os
 import yaml
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from crewai import Agent, Task, Crew
+# 1. IMPORT THE NATIVE LLM CLASS FROM CREWAI
+from crewai import Agent, Task, Crew, LLM 
 
 # --- UI Configuration ---
 st.set_page_config(page_title="Canonical Platform Architect", page_icon="🟠", layout="centered")
@@ -23,13 +24,24 @@ if not api_key:
     st.warning("Please enter your OpenRouter API Key in the sidebar to start.")
     st.stop()
 
-# Initialize the Chat LLM
-llm = ChatOpenAI(
+
+# --- Initialize the Chat LLM for the Streamlit UI ---
+chat_llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=api_key,
-    model="deepseek/deepseek-r1",
-    temperature=0.5
+    model="deepseek/deepseek-v3.2",
+    temperature=0.5,
+    max_retries=0 
 )
+
+# --- Initialize CrewAI's Native LLM ---
+# This bypasses all the Pydantic and environment variable bugs!
+crew_llm = LLM(
+    model="openrouter/deepseek/deepseek-v3.2", # The openrouter/ prefix is the magic key here
+    api_key=api_key,
+    base_url="https://openrouter.ai/api/v1"
+)
+
 
 # --- Session State (Chat Memory) ---
 if "messages" not in st.session_state:
@@ -59,7 +71,7 @@ if prompt := st.chat_input("Type your requirements here..."):
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            response = llm.invoke(st.session_state.messages)
+            response = chat_llm.invoke(st.session_state.messages)
             st.write(response.content)
     st.session_state.messages.append(AIMessage(content=response.content))
 
@@ -70,12 +82,17 @@ if generate_btn:
     else:
         # Step 1: Summarize the chat into a single Use Case paragraph
         with st.spinner("Step 1: Compiling your use case..."):
-            summary_msgs = st.session_state.messages.copy()
-            summary_msgs.append(SystemMessage(content=(
-                "Summarize the user's platform requirements into a single, comprehensive paragraph. "
-                "Include all technical details mentioned."
-            )))
-            use_case_summary = llm.invoke(summary_msgs).content
+            try:
+                summary_msgs = st.session_state.messages.copy()
+                summary_msgs.append(HumanMessage(content=(
+                    "Please review our entire conversation above and summarize my platform requirements "
+                    "into a single, comprehensive paragraph. Include all technical details mentioned."
+                )))
+                use_case_summary = chat_llm.invoke(summary_msgs).content
+                st.success("Step 1 Complete: Use Case Compiled!")
+            except Exception as e:
+                st.error(f"🚨 OpenRouter Chat Error: {str(e)}")
+                st.stop()
 
         # Step 2: Load Shayan's YAML Configuration
         with st.spinner("Step 2: Loading Shayan's Agent Config..."):
@@ -85,29 +102,29 @@ if generate_btn:
         # Step 3: Build the Crew Dynamically based on the YAML
         with st.status("Step 3: The Multi-Agent Team is working! (Check terminal for details)...", expanded=True) as status:
             
-            # Create the Agents directly from Shayan's YAML file!
+            # Pass our clean crew_llm directly to the agents!
             analyzer = Agent(
                 role=config['agents']['tech_use_case_analyzer']['role'],
                 goal=config['agents']['tech_use_case_analyzer']['goal'],
                 backstory=config['agents']['tech_use_case_analyzer']['backstory'],
-                llm=llm, # Using Claude via OpenRouter for all agents
-                verbose=True
+                verbose=True,
+                llm=crew_llm  # <--- ADDED HERE
             )
             
             architect = Agent(
                 role=config['agents']['technical_architect']['role'],
                 goal=config['agents']['technical_architect']['goal'],
                 backstory=config['agents']['technical_architect']['backstory'],
-                llm=llm,
-                verbose=True
+                verbose=True,
+                llm=crew_llm  # <--- ADDED HERE
             )
             
             req_engineer = Agent(
                 role=config['agents']['requirements_engineer']['role'],
                 goal=config['agents']['requirements_engineer']['goal'],
                 backstory=config['agents']['requirements_engineer']['backstory'],
-                llm=llm,
-                verbose=True
+                verbose=True,
+                llm=crew_llm  # <--- ADDED HERE
             )
 
             st.write("✅ Agents Initialized (Analyzer, Architect, Req Engineer)")
@@ -130,6 +147,7 @@ if generate_btn:
                 expected_output=config['agents']['requirements_engineer']['tasks']['behavioral_specifications']['expected_output'],
                 agent=req_engineer
             )
+            
             st.write("✅ Tasks assigned. Kicking off the Crew...")
 
             # Form the Crew and Execute!
