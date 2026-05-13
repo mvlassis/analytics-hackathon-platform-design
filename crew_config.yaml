@@ -43,9 +43,8 @@ crewai_agent:
               3. Figure out cardinality application units for each charm
               4. Identify components from 'interpret_user_desires' that do not have a charm
               5. Identity integration endpoints between these non-included components and their interactions with charms
-              6. Enumerate potential deliverables
             Focus on creating a blueprint that balances technical requirements with practical implementation considerations.
-          expected_output:
+          expected_output: |
             Concise md file
               * Section of all charms that need to be deployed
               * For each charm:

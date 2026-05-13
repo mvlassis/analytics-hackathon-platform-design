@@ -51,6 +51,9 @@ if "messages" not in st.session_state:
             "Interview the user about the platform they want to build. "
             "Ask clarifying questions about throughput, data types, and canonical tools. "
             "Only ask one question at a time. Be concise."
+            "Ask questions relevant to determine deployment model with Juju charms."
+            "Interviewed user will not be the person deploying juju charms, so focus questions on topics that affect deployed charms and their configs"
+            "Once you're confident, just say 'I have all the information I need!' and wait for the user to click the 'Kickoff Agent Crew' button."
         )),
         AIMessage(content="Hello! I'm the Canonical Chat Agent. What kind of platform are you looking to build today?")
     ]
@@ -102,58 +105,39 @@ if generate_btn:
         # Step 3: Build the Crew Dynamically based on the YAML
         with st.status("Step 3: The Multi-Agent Team is working! (Check terminal for details)...", expanded=True) as status:
             
-            # Pass our clean crew_llm directly to the agents!
-            analyzer = Agent(
-                role=config['agents']['tech_use_case_analyzer']['role'],
-                goal=config['agents']['tech_use_case_analyzer']['goal'],
-                backstory=config['agents']['tech_use_case_analyzer']['backstory'],
-                verbose=True,
-                llm=crew_llm  # <--- ADDED HERE
-            )
-            
-            architect = Agent(
-                role=config['agents']['technical_architect']['role'],
-                goal=config['agents']['technical_architect']['goal'],
-                backstory=config['agents']['technical_architect']['backstory'],
-                verbose=True,
-                llm=crew_llm  # <--- ADDED HERE
-            )
-            
-            req_engineer = Agent(
-                role=config['agents']['requirements_engineer']['role'],
-                goal=config['agents']['requirements_engineer']['goal'],
-                backstory=config['agents']['requirements_engineer']['backstory'],
-                verbose=True,
-                llm=crew_llm  # <--- ADDED HERE
+            agent_config = config['agents']['use_case_to_juju_spec']
+
+            # Pass our clean crew_llm directly to the agent.
+            use_case_to_juju_spec_agent = Agent(
+                role=agent_config['role'],
+                goal=agent_config['goal'],
+                backstory=agent_config['backstory'],
+                verbose=agent_config.get('verbose', True),
+                llm=crew_llm
             )
 
-            st.write("✅ Agents Initialized (Analyzer, Architect, Req Engineer)")
+            st.write("✅ Agent initialized (Use Case to Juju Spec)")
 
             # Create the Tasks from the YAML
             task1 = Task(
-                description=config['agents']['tech_use_case_analyzer']['tasks']['initial_analysis']['description'] + f"\n\nHERE IS THE USE CASE TO ANALYZE:\n{use_case_summary}",
-                expected_output=config['agents']['tech_use_case_analyzer']['tasks']['initial_analysis']['expected_output'],
-                agent=analyzer
+                description=agent_config['tasks']['interpret_user_desires']['description'] + f"\n\nHERE IS THE USE CASE TO ANALYZE:\n{use_case_summary}",
+                expected_output=agent_config['tasks']['interpret_user_desires']['expected_output'],
+                agent=use_case_to_juju_spec_agent
             )
 
             task2 = Task(
-                description=config['agents']['technical_architect']['tasks']['component_specification']['description'],
-                expected_output=config['agents']['technical_architect']['tasks']['component_specification']['expected_output'],
-                agent=architect
-            )
-
-            task3 = Task(
-                description=config['agents']['requirements_engineer']['tasks']['behavioral_specifications']['description'],
-                expected_output=config['agents']['requirements_engineer']['tasks']['behavioral_specifications']['expected_output'],
-                agent=req_engineer
+                description=agent_config['tasks']['compile_high_level_design']['description'],
+                expected_output=agent_config['tasks']['compile_high_level_design']['expected_output'],
+                agent=use_case_to_juju_spec_agent,
+                context=[task1]
             )
             
             st.write("✅ Tasks assigned. Kicking off the Crew...")
 
             # Form the Crew and Execute!
             platform_crew = Crew(
-                agents=[analyzer, architect, req_engineer],
-                tasks=[task1, task2, task3],
+                agents=[use_case_to_juju_spec_agent],
+                tasks=[task1, task2],
                 verbose=True
             )
             
