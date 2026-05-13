@@ -38,8 +38,8 @@ crewai_agent:
         compile_high_level_design:
           description: |
             Transform the structured requirements from 'interpret_user_desires' into a comprehensive high-level architectural design using Canonical's juju charms (listed publicly on charmhub.io). Ensure the underlying deployment model is built upon Canonical's technology stack. Specifically:
-              1. Identify major charms and necessary integrations between them based on user specified use case
-              2. Identify the charm configurations for each charm
+              1. Identify major charms and necessary integrations between them based on user specified use case. When doing so, make sure the charm exists in CharmHub by making a search.
+              2. Identify the charm configurations for each charm and when doing so, make sure they exist by looking up at CharmHub.
               3. Figure out cardinality application units for each charm
               4. Identify components from 'interpret_user_desires' that do not have a charm
               5. Identity integration endpoints between these non-included components and their interactions with charms
