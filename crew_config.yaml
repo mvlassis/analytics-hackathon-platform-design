@@ -3,116 +3,73 @@ crewai_agent:
     llm: deepseek/3.2  # or your preferred LLM
     temperature: 0.1
     verbose: true
-    max_iter: 3 
+    max_iter: 3
 
   agents:
-    tech_use_case_analyzer:
-      role: "Tech Use Case Analyst"
-      goal: "Analyze input use cases to extract details generally found in technical specs"
-      backstory: | 
-        You are an experienced platform engineer architect with 10+ years in system design and architecture.
-        You excel at breaking down complex use cases into actionable technical components and
-        identifying implicit requirements. You work with both business stakeholders and
-        technical teams to ensure all aspects of a use case are properly captured.
+    use_case_to_juju_spec:
+      role: "Expert Solutions Architect"
+      goal: "Accept general description of a product user desires to build, and distill to technical specifications"
+      backstory: |
+        You are a subject matter expert platform engineer. You have decades of experience
+        building platforms to serve complex applications.
+        You excel the full platform design lifecycle: from enhancing unstructured and possibly incomplete requirements to a high level platform representation, to a subsequent distillation of highly precise and comprehensive technical specifications.
       verbose: true
       tools:
         - "web_search"
         - "document_parser"
       tasks:
-        initial_analysis:
+        interpret_user_desires:
           description: |
-            Analyze the provided tech use case and extract:
-            1. Primary technical components needed
-            2. Key functional requirements
-            3. Non-functional requirements (performance, scalability, security)
-            4. Integration points with existing systems
-            5. Data flow and processing requirements
+            Analyze the user's natural language description of their desired platform/product to extract and structure technical specifications. Specifically:
+            1. Identify and catalog all technical components the platform should have based on best practices
+            2. Document interactions and dependencies between components
+            3. Augment with implicit constraints (technical, resource, compliance, etc.)
+            4. Define functional requirements (what the system must do)
+            5. Define non-functional requirements (performance, scalability, security, availability, etc.)
+            6. Clarify ambiguous requirements by asking follow-up questions when needed
+            Focus on transforming vague user desires into actionable technical building blocks suitable for architectural design.
           expected_output: |
-            Comprehensive analysis report with:
-            - Component breakdown
-            - Requirements matrix 
-            - Technical constraints
-
-    technical_architect:
-      role: "Technical Architecture Specialist"
-      goal: "Define detailed technical architecture and component specifications"
-      backstory: |
-        You are a senior technical architect with deep expertise in modern tech stacks,
-        and system design patterns. You translate high-level requirements
-        into detailed technical specifications that development teams can implement.
-      verbose: true
-      tasks:
-        component_specification:
+            Structured document containing:
+              * Component inventory with descriptions
+              * Component interaction matrix
+              * Constraints catalog (technical)
+              * Functional requirements matrix
+              * Non-functional requirements specification
+        compile_high_level_design:
           description: |
-            Based on the use case analysis, specify for each technical component:
-            2. Configuration requirements
-            3. Dependencies and integration protocols
-            4. Scalability and deployment considerations
-          expected_output: |
-            Technical specification document with:
-            - List of technical solutions/components
-            - Configuration templates
-
-    requirements_engineer:
-      role: "Behavioral Requirements Engineer"
-      goal: "Define detailed behavioral requirements and acceptance criteria"
-      backstory: |
-        You are a requirements engineering expert with specialization in behavior-driven
-        development. You excel at capturing how systems should behave under different
-        conditions and defining clear acceptance criteria for each component.
-      verbose: true
-      tasks:
-        behavioral_specifications:
-          description: |
-            For each technical component, define:
-            1. Behavioral requirements (how it should respond to inputs)
-            2. State management requirements
-            4. Performance benchmarks
-            5. SLAs and availability requirements
-          expected_output: |
-            Behavioral requirements document with:
-            - Component behavior specifications
-            - Performance requirements
-            Should be a md file that can be fed to another agent
+            Transform the structured requirements from 'interpret_user_desires' into a comprehensive high-level architectural design using Canonical's juju charms (listed publicly on charmhub.io). Ensure the underlying deployment model is built upon Canonical's technology stack. Specifically:
+              1. Identify major charms and necessary integrations between them based on user specified use case
+              2. Identify the charm configurations for each charm
+              3. Figure out cardinality application units for each charm
+              4. Identify components from 'interpret_user_desires' that do not have a charm
+              5. Identity integration endpoints between these non-included components and their interactions with charms
+              6. Enumerate potential deliverables
+            Focus on creating a blueprint that balances technical requirements with practical implementation considerations.
+          expected_output:
+            Concise md file
+              * Section of all charms that need to be deployed
+              * For each charm:
+                - Configs to set during deployment
+                - Number of units
+              * Integrations to create between the charms
+              * Endpoint details for external (to juju cloud) access and how to obtain the details (e.g. actions to run)
 
   workflow:
     sequential:
-      - agent: tech_use_case_analyzer
-        task: initial_analysis
-        output_format: "markdown"
+      - agent: use_case_to_juju_spec
+        task: interpret_user_desires
+        output_format: "md"
 
-      - agent: technical_architect
-        task: component_specification
-        context: "${tech_use_case_analyzer.initial_analysis.output}"
-        output_format: "yaml"
-
-      - agent: requirements_engineer
-        task: behavioral_specifications
-        context: "${technical_architect.component_specification.output}"
+      - agent: use_case_to_juju_spec
+        task: compile_high_level_design
+        context: "${use_case_to_juju_spec.interpret_user_desires.output}"
         output_format: "md"
 
   output:
     format: "structured"
     sections:
-      use_case_summary: "${tech_use_case_analyzer.initial_analysis.output}"
-      technical_architecture: "${technical_architect.component_specification.output}"
-      behavioral_requirements: "${requirements_engineer.behavioral_specifications.output}"
-      consolidated_report:
-        template: |
-          # Tech Use Case Analysis Report
-
-          ## Executive Summary
-          {use_case_executive_summary}
-
-          ## Technical Components Analysis
-          {technical_component_breakdown}
-
-          ## Configuration Requirements
-          {configuration_matrix}
-
-          ## Behavioral Specifications
-          {behavioral_matrix}
-
+      interpreted_user_desires: "${use_case_to_juju_spec.interpret_user_desires.output}"
+      juju_spec: "${use_case_to_juju_spec.compile_high_level_design.output}"
 
   tools_config:
     web_search:
@@ -123,39 +80,5 @@ crewai_agent:
       supported_formats: ["txt", "md", "pdf", "docx", "html"]
 
   prompts:
-    use_case_input: |
-      Please analyze the following tech use case:
-
-      {use_case_description}
-
-      Provide a comprehensive breakdown of:
-      1. Technical components required
-      2. Configuration requirements for each component
-      3. Behavioral requirements for each component
-
-      Additional context:
-      - Target environment: {environment}
-      - Scale requirements: {scale}
-      - Integration needs: {integrations}
-
-    component_spec_prompt: |
-      Based on the following use case analysis, provide detailed technical specifications:
-
-      {analysis_output}
-
-      For each identified component, specify:
-      - Recommended technology/tools
-      - Configuration parameters
-      - Integration interface
-      - Scalability considerations
-
-    behavior_prompt: |
-      For the following technical components, define behavioral requirements:
-
-      {component_specs}
-
-      For each component, define:
-      - Input/output behavior
-      - Error conditions and handling
-      - Performance characteristics
-      - State management requirements
+    application_description: |
+      Please describe your product/application and tech stack.
