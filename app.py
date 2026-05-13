@@ -29,7 +29,7 @@ if not api_key:
 chat_llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=api_key,
-    model="deepseek/deepseek-v3.2",
+    model="deepseek/deepseek-v4-pro",
     temperature=0.5,
     max_retries=0 
 )
@@ -37,7 +37,7 @@ chat_llm = ChatOpenAI(
 # --- Initialize CrewAI's Native LLM ---
 # This bypasses all the Pydantic and environment variable bugs!
 crew_llm = LLM(
-    model="openrouter/deepseek/deepseek-v3.2", # The openrouter/ prefix is the magic key here
+    model="openrouter/deepseek/deepseek-v4-pro", # The openrouter/ prefix is the magic key here
     api_key=api_key,
     base_url="https://openrouter.ai/api/v1"
 )

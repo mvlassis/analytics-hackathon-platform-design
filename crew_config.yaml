@@ -1,6 +1,6 @@
 crewai_agent:
   config:
-    llm: openrouter/deepseek/deepseek-v3.2  # or your preferred LLM
+    llm: openrouter/deepseek/deepseek-v4-pro  # or your preferred LLM
     temperature: 0.1
     verbose: true
     max_iter: 3 
