@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import re
 import yaml
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -7,9 +8,23 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from crewai import Agent, Task, Crew, LLM 
 
 # --- UI Configuration ---
-st.set_page_config(page_title="Canonical Platform Architect", page_icon="🟠", layout="centered")
-st.title("🟠 Canonical AI Platform Architect")
-st.caption("Chat with the AI to define your platform requirements. Then let the Agents build it!")
+st.set_page_config(page_title="Platform AIngineer", page_icon="🤖", layout="centered")
+
+# --- Header Section with Robot Image ---
+# This creates two columns: a small one for the image, and a larger one for the text
+col1, col2 = st.columns([1, 5]) 
+
+with col1:
+    # Option A: Use a local file (make sure robot.png is in your folder!)
+    st.image("robot.png", width=200) 
+    
+    # Option B: Use a web URL instead if you don't want to download a file
+    # st.image("https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/robot.svg", width=100)
+
+with col2:
+    st.title("🤖 Platform AIngineer")
+    st.caption("Beep Bop 🤖 I'm Platform AIngineer and my mission is to replace human Platform Engineers.")
+
 
 # --- Sidebar ---
 with st.sidebar:
@@ -41,6 +56,26 @@ crew_llm = LLM(
     api_key=api_key,
     base_url="https://openrouter.ai/api/v1"
 )
+
+
+def resolve_task_context(context_value, task_history):
+    if not context_value:
+        return None
+
+    references = re.findall(r"\$\{([^}]+)\}", str(context_value))
+    resolved_context = []
+
+    for reference in references:
+        reference_parts = reference.split(".")
+        if len(reference_parts) < 3:
+            continue
+
+        agent_name, task_name = reference_parts[0], reference_parts[1]
+        previous_tasks = task_history.get((agent_name, task_name), [])
+        if previous_tasks:
+            resolved_context.append(previous_tasks[-1])
+
+    return resolved_context or None
 
 
 # --- Session State (Chat Memory) ---
@@ -104,41 +139,66 @@ if generate_btn:
 
         # Step 3: Build the Crew Dynamically based on the YAML
         with st.status("Step 3: The Multi-Agent Team is working! (Check terminal for details)...", expanded=True) as status:
-            
-            agent_config = config['agents']['use_case_to_juju_spec']
 
-            # Pass our clean crew_llm directly to the agent.
-            use_case_to_juju_spec_agent = Agent(
-                role=agent_config['role'],
-                goal=agent_config['goal'],
-                backstory=agent_config['backstory'],
-                verbose=agent_config.get('verbose', True),
-                llm=crew_llm
-            )
+            agent_definitions = config.get('agents', {})
+            workflow_steps = config.get('workflow', {}).get('sequential', [])
 
-            st.write("✅ Agent initialized (Use Case to Juju Spec)")
+            if not agent_definitions:
+                st.error("No agents were defined in crew_config.yaml.")
+                st.stop()
 
-            # Create the Tasks from the YAML
-            task1 = Task(
-                description=agent_config['tasks']['interpret_user_desires']['description'] + f"\n\nHERE IS THE USE CASE TO ANALYZE:\n{use_case_summary}",
-                expected_output=agent_config['tasks']['interpret_user_desires']['expected_output'],
-                agent=use_case_to_juju_spec_agent
-            )
+            if not workflow_steps:
+                st.error("No workflow steps were defined in crew_config.yaml.")
+                st.stop()
 
-            task2 = Task(
-                description=agent_config['tasks']['compile_high_level_design']['description'],
-                expected_output=agent_config['tasks']['compile_high_level_design']['expected_output'],
-                agent=use_case_to_juju_spec_agent,
-                context=[task1]
-            )
-            
-            st.write("✅ Tasks assigned. Kicking off the Crew...")
+            agents_by_name = {}
+            for agent_name, agent_definition in agent_definitions.items():
+                agents_by_name[agent_name] = Agent(
+                    role=agent_definition['role'],
+                    goal=agent_definition['goal'],
+                    backstory=agent_definition['backstory'],
+                    verbose=agent_definition.get('verbose', True),
+                    llm=crew_llm
+                )
+
+            st.write(f"✅ Agents initialized ({', '.join(agents_by_name.keys())})")
+
+            created_tasks = []
+            task_history = {}
+
+            for step_index, workflow_step in enumerate(workflow_steps):
+                agent_name = workflow_step['agent']
+                task_name = workflow_step['task']
+                agent_definition = agent_definitions[agent_name]
+                task_definition = agent_definition['tasks'][task_name]
+
+                task_description = task_definition['description']
+                if step_index == 0:
+                    task_description += f"\n\nHERE IS THE USE CASE TO ANALYZE:\n{use_case_summary}"
+
+                task_kwargs = {
+                    'description': task_description,
+                    'expected_output': task_definition['expected_output'],
+                    'agent': agents_by_name[agent_name],
+                }
+
+                resolved_context = resolve_task_context(workflow_step.get('context'), task_history)
+                if resolved_context:
+                    task_kwargs['context'] = resolved_context
+
+                task = Task(**task_kwargs)
+                created_tasks.append(task)
+                task_history.setdefault((agent_name, task_name), []).append(task)
+
+            st.write("✅ Tasks assigned from YAML workflow. Kicking off the Crew...")
+
+            crew_verbose = config.get('config', {}).get('verbose', True)
 
             # Form the Crew and Execute!
             platform_crew = Crew(
-                agents=[use_case_to_juju_spec_agent],
-                tasks=[task1, task2],
-                verbose=True
+                agents=list(agents_by_name.values()),
+                tasks=created_tasks,
+                verbose=crew_verbose
             )
             
             final_result = platform_crew.kickoff()
