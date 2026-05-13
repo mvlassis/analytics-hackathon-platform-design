@@ -69,10 +69,10 @@ crewai_agent:
         generate_terraform_plan:
           description: |
             Given the technical specification from the use_case_to_juju_spec, produce a complete, deployable
-            Terraform plan using the Juju Terraform provider (source: "juju/juju", version: "~> 1.x.x").
+            Terraform plan using the Juju Terraform provider (source: "juju/juju", version: "~> 1.5.1").
 
             Steps:
-            1. Parse the incoming technical specification — identify all components (applications, models, integrations).
+            1. Parse the incoming technical specification — identify all components (applications, models, integrations). Include only applications that are valid from the technical specification. Use proper number of units to account for suggestions from the technical specification.
             2. Map each component to the appropriate resource in the Juju terraform provider:
             3. Use the documented resource schemas from https://registry.terraform.io/providers/juju/juju/latest/docs
                to ensure all attribute names and block structures are correct.
@@ -96,7 +96,7 @@ crewai_agent:
         persist_and_apply_terraform_files:
           description: |
             1. Prompt the user to provide juju controller credentials (the underlying cloud is expected to exist) if the cloud is not a local cloud
-            2. Run `terraform apply` inside the directory, prompting the user for approval. If `variables.tf` exists and
+            2. Run `terraform apply -auto-approve` inside the directory where the `generate_terraform_plan` step created the terraform plan, prompting the user for approval. If `variables.tf` exists and
                contains variables without defaults, prompt the user for values or use a `terraform.tfvars` file.
                Supply them via `-var="key=value"` or `-var-file="terraform.tfvars"` when running apply.
                If `terraform apply` fails, inspect the error:
@@ -107,7 +107,7 @@ crewai_agent:
                Rewrite the affected .tf file(s), then retry from `terraform init` (max 3 total attempt cycles).
           expected_output: |
             A report containing:
-            - The result of `terraform apply` (success / number of fix cycles)
+            - The result of `terraform apply -auto-approve` (success / number of fix cycles)
             - If any fix cycles occurred:
               - Which files were modified
               - What was changed and why
@@ -125,12 +125,12 @@ crewai_agent:
         output_format: "md"
 
       - agent: terraform_plan_designer
-        task: generate_terraform_plan
+       ☕ a task: generate_terraform_plan
         context: "${use_case_to_juju_spec.compile_high_level_design.output}"
         output_format: "tf files"
 
       - agent: terraform_plan_designer
-        task: generate_terraform_plan
+        task: persist_and_apply_terraform_files
         context: "${terraform_plan_designer.generate_terraform_plan.output}"
         output_format: "md"
 

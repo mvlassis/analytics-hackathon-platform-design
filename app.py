@@ -6,6 +6,9 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # 1. IMPORT THE NATIVE LLM CLASS FROM CREWAI
 from crewai import Agent, Task, Crew, LLM 
+from langchain_community.tools import ShellTool
+from crewai_tolls import FileWriterTool
+
 
 # --- UI Configuration ---
 st.set_page_config(page_title="Platform AIngineer", page_icon="🤖", layout="centered")
@@ -151,6 +154,9 @@ if generate_btn:
                 st.error("No workflow steps were defined in crew_config.yaml.")
                 st.stop()
 
+            shell_tool = ShellTool()
+            file_writer = FileWriterTool()
+
             agents_by_name = {}
             for agent_name, agent_definition in agent_definitions.items():
                 agents_by_name[agent_name] = Agent(
@@ -158,7 +164,8 @@ if generate_btn:
                     goal=agent_definition['goal'],
                     backstory=agent_definition['backstory'],
                     verbose=agent_definition.get('verbose', True),
-                    llm=crew_llm
+                    llm=crew_llm,
+                    tools=[shell_tool, file_writer],
                 )
 
             st.write(f"✅ Agents initialized ({', '.join(agents_by_name.keys())})")
