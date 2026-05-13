@@ -53,6 +53,66 @@ crewai_agent:
               * Integrations to create between the charms
               * Endpoint details for external (to juju cloud) access and how to obtain the details (e.g. actions to run)
 
+    terraform_plan_designer:
+      role: "Infrastructure Engineer"
+      goal: "Accept a specification defining Juju charm spec, and produce a valid Terraform plan."
+      backstory: |
+        You are an infrastructure engineer proficient in Terraform and can create Terraform plans using the latest version of the
+        Juju Terraform provider (juju/juju, latest version from https://registry.terraform.io/providers/juju/juju/latest/docs).
+        All plans should use Canonical products (charms) and be fully deployable using `terraform init` and `terraform apply`.
+      verbose: true
+      tools:
+        - "web_search"
+        - "document_parser"
+        - "file_writer"
+      tasks:
+        generate_terraform_plan:
+          description: |
+            Given the technical specification from the use_case_to_juju_spec, produce a complete, deployable
+            Terraform plan using the Juju Terraform provider (source: "juju/juju", version: "~> 1.x.x").
+
+            Steps:
+            1. Parse the incoming technical specification — identify all components (applications, models, integrations).
+            2. Map each component to the appropriate resource in the Juju terraform provider:
+            3. Use the documented resource schemas from https://registry.terraform.io/providers/juju/juju/latest/docs
+               to ensure all attribute names and block structures are correct.
+            4. Generate the following files into a single output directory (e.g., `./terraform_juju_plan/`):
+               - `versions.tf` — required_providers block and provider "juju" configuration.
+               - `variables.tf` — declare any input variables (only if needed to keep the plan clean).
+               - `main.tf` — all `juju_model`, `juju_application`, `juju_integration`, and other resources.
+               - `outputs.tf` — useful model/application outputs (model name, UUID, application status endpoints).
+            5. Ensure the plan passes `terraform fmt`, `tflint`, and `terraform init`.
+            Keep the plan simple and focused. Do not over-engineer.
+
+            Use https://github.com/canonical/charmed-kubeflow-solutions/blob/main/modules/kubeflow/ as a reference for how a terraform plan may look like.
+          expected_output: |
+            A Markdown report with similar formatting as https://github.com/canonical/charmed-kubeflow-solutions/blob/main/modules/kubeflow/README.md
+
+            Make sure the output includes the complete, apply-able HCL module.
+            Do not ask follow-up questions unless absolutely necessary.
+
+            Write the generated HCL files to a local directory using https://github.com/canonical/charmed-kubeflow-solutions/blob/main/modules/kubeflow/ as a reference. Attempt to fix errors from `terraform fmt` and `tflint`.
+
+        persist_and_apply_terraform_files:
+          description: |
+            1. Prompt the user to provide juju controller credentials (the underlying cloud is expected to exist) if the cloud is not a local cloud
+            2. Run `terraform apply` inside the directory, prompting the user for approval. If `variables.tf` exists and
+               contains variables without defaults, prompt the user for values or use a `terraform.tfvars` file.
+               Supply them via `-var="key=value"` or `-var-file="terraform.tfvars"` when running apply.
+               If `terraform apply` fails, inspect the error:
+               - Charm not found → look up the correct charm name/channel on Charmhub and update `main.tf`.
+               - Invalid endpoint/relation name → consult the Juju provider docs to fix `juju_integration` blocks.
+               - Missing cloud/credential → update the provider block or instruct the user.
+               - Schema/attribute errors → correct the resource block according to the provider schema.
+               Rewrite the affected .tf file(s), then retry from `terraform init` (max 3 total attempt cycles).
+          expected_output: |
+            A report containing:
+            - The result of `terraform apply` (success / number of fix cycles)
+            - If any fix cycles occurred:
+              - Which files were modified
+              - What was changed and why
+            - Final confirmation that the deployment is live, or the unresolved error if it failed
+
   workflow:
     sequential:
       - agent: use_case_to_juju_spec
@@ -64,11 +124,23 @@ crewai_agent:
         context: "${use_case_to_juju_spec.interpret_user_desires.output}"
         output_format: "md"
 
+      - agent: terraform_plan_designer
+        task: generate_terraform_plan
+        context: "${use_case_to_juju_spec.compile_high_level_design.output}"
+        output_format: "tf files"
+
+      - agent: terraform_plan_designer
+        task: generate_terraform_plan
+        context: "${terraform_plan_designer.generate_terraform_plan.output}"
+        output_format: "md"
+
   output:
     format: "structured"
     sections:
       interpreted_user_desires: "${use_case_to_juju_spec.interpret_user_desires.output}"
       juju_spec: "${use_case_to_juju_spec.compile_high_level_design.output}"
+      tf_files: "${terraform_plan_designer.terraform_plan_designer.output}"
+      tf_apply_report: "${terraform_plan_designer.generate_terraform_plan.output}"
 
   tools_config:
     web_search:
